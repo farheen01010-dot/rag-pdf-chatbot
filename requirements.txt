@@ -1,0 +1,11 @@
+pymupdf
+pytesseract
+pillow
+langdetect
+sentence-transformers
+qdrant-client
+rank-bm25
+fastapi
+uvicorn[standard]
+python-multipart
+openai

@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PDF Library Chat</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400;6..72,600&family=Instrument+Sans:wght@400;600&display=swap">
+<style>
+:root{--bg:#eceee9;--panel:#f7f8f5;--ink:#1c2a2d;--mute:#667377;--line:#cfd5d0;--acc:#0e6a68;--hi:#f0c24b}
+@media(prefers-color-scheme:dark){:root{--bg:#141b1c;--panel:#1b2425;--ink:#e4eae7;--mute:#8b9a9c;--line:#2f3c3e;--acc:#4fc2bd;--hi:#c99a1f}}
+*{box-sizing:border-box}html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--ink);font:15px/1.5 "Instrument Sans",system-ui,sans-serif;display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,1fr);gap:12px;padding:12px}
+section{background:var(--panel);border:1px solid var(--line);border-radius:6px;display:flex;flex-direction:column;min-height:0}
+header{padding:12px 16px;border-bottom:1px solid var(--line);display:flex;gap:8px;align-items:center}
+h1{font:600 20px "Newsreader",serif;margin:0;flex:1}
+.scroll{overflow:auto;padding:16px;flex:1}
+.q{font-weight:600;margin:14px 0 6px}
+.a{font:400 17px/1.6 "Newsreader",serif;max-width:70ch;white-space:pre-wrap}
+.cite{background:var(--hi);color:#1c2a2d;border:0;border-radius:3px;font:600 12px "Instrument Sans";padding:0 5px;cursor:pointer;vertical-align:1px}
+.badge{color:var(--mute);font-size:12px;margin-top:6px}
+form{display:flex;gap:8px;padding:12px;border-top:1px solid var(--line)}
+input[type=text]{flex:1;padding:10px 12px;border:1px solid var(--line);border-radius:4px;background:var(--bg);color:var(--ink);font:inherit}
+button{font:inherit;cursor:pointer}
+.btn{background:var(--acc);color:#fff;border:0;border-radius:4px;padding:8px 16px}
+.tab{background:none;border:0;border-bottom:2px solid transparent;color:var(--mute);padding:4px 8px}
+.tab[aria-selected=true]{color:var(--ink);border-color:var(--acc)}
+:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+.chunk{border:1px solid var(--line);border-left:4px solid var(--acc);border-radius:4px;padding:10px 12px;margin-bottom:10px;transition:background .3s}
+.chunk.flash{background:color-mix(in srgb,var(--hi) 35%,transparent)}
+.chunk b{font-size:13px}.chunk a{color:var(--acc)}
+.chunk p{margin:6px 0 0;font-size:13px;color:var(--mute);max-height:5.5em;overflow:hidden}
+.chunk.open p{max-height:none}
+.scores{font-size:12px;color:var(--mute);margin-top:4px}
+.bar{height:6px;display:flex;border-radius:3px;overflow:hidden;margin:8px 0;background:var(--line)}
+.bar i{display:block}
+.drop{border:2px dashed var(--line);border-radius:6px;padding:22px;text-align:center;color:var(--mute)}
+.drop.over{border-color:var(--acc);color:var(--ink)}
+table{width:100%;border-collapse:collapse;font-size:13px;margin-top:12px}td,th{text-align:left;padding:6px 4px;border-bottom:1px solid var(--line)}
+.empty{color:var(--mute)}
+@media(max-width:900px){body{grid-template-columns:1fr;height:auto}section{min-height:70vh}}
+</style></head><body>
+<section>
+ <header><h1>Ask your PDF library</h1><span id="stat" class="badge"></span></header>
+ <div class="scroll" id="chat"><p class="empty">Ask a question about the ingested PDFs. Answers cite file and page; click a citation to see the passage.</p></div>
+ <form id="f"><input type="text" id="q" placeholder="e.g. What were the main risk factors in 2023?" autocomplete="off" required><button class="btn">Ask</button></form>
+</section>
+<section>
+ <header role="tablist"><button class="tab" role="tab" aria-selected="true" data-t="r">Retrieved passages</button><button class="tab" role="tab" aria-selected="false" data-t="i">Ingestion</button></header>
+ <div class="scroll" id="r"><p class="empty">Top passages and their scores appear here after each question.</p></div>
+ <div class="scroll" id="i" hidden>
+  <label class="drop" id="drop">Drop PDFs here or click to choose<input type="file" id="file" accept=".pdf" multiple hidden></label>
+  <table><thead><tr><th>File<th>Stage<th>Pages<th>OCR<th>Chunks</tr></thead><tbody id="rows"></tbody></table>
+  <p class="badge" id="tot"></p>
+ </div>
+</section>
+<script>
+const $=id=>document.getElementById(id),esc=s=>s.replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+let chunks=[];
+document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{document.querySelectorAll('.tab').forEach(t=>t.setAttribute('aria-selected',t==b));$('r').hidden=b.dataset.t!='r';$('i').hidden=b.dataset.t!='i'});
+function showChunks(){ $('r').innerHTML=chunks.map(c=>`<div class="chunk" id="c${c.id}"><b>[${c.id}] ${esc(c.pdf)}, p.${c.page_start}${c.page_end>c.page_start?'–'+c.page_end:''}</b>${c.is_ocr?' (OCR)':''}
+ · <a href="/pdf/${encodeURIComponent(c.pdf)}#page=${c.page_start}" target="_blank" rel="noopener">open page</a>
+ <div class="scores">rerank ${c.rerank.toFixed(2)} · dense ${c.dense==null?'–':c.dense.toFixed(3)} · bm25 ${c.bm25==null?'–':c.bm25.toFixed(1)}</div>
+ <p>${esc(c.text)}</p></div>`).join('');
+ document.querySelectorAll('.chunk').forEach(e=>e.onclick=()=>e.classList.toggle('open'));}
+function focusChunk(n){document.querySelector('[data-t=r]').click();const e=$('c'+n);if(!e)return;e.classList.add('open','flash');e.scrollIntoView({behavior:'smooth',block:'center'});setTimeout(()=>e.classList.remove('flash'),1500)}
+function renderAnswer(el,t){el.innerHTML=esc(t).replace(/[\[【［](\d+)[^\]】］<>]*[\]】］]/g,(m,n)=>`<button class="cite" data-n="${n}" title="Show source">${n}</button>`);el.querySelectorAll('.cite').forEach(b=>b.onclick=()=>focusChunk(b.dataset.n))}
+function badge(tm){const ms=k=>tm[k]==null?'–':Math.round(tm[k]*1000)+'ms';const tot=tm.total||0,w=k=>tot?(tm[k]||0)/tot*100:0;
+ return `<div class="bar"><i style="width:${w('embed')}%;background:#7aa6c2"></i><i style="width:${w('search')}%;background:#9bc28a"></i><i style="width:${w('rerank')}%;background:#e0b252"></i><i style="width:${w('llm_first_token')}%;background:var(--acc)"></i></div>
+ total ${ms('total')} · embed ${ms('embed')} · search ${ms('search')} · rerank ${ms('rerank')} · first token ${ms('llm_first_token')}`}
+$('f').onsubmit=async e=>{e.preventDefault();const q=$('q').value.trim();if(!q)return;$('q').value='';
+ if($('chat').querySelector('.empty'))$('chat').innerHTML='';
+ $('chat').insertAdjacentHTML('beforeend',`<div class="q">${esc(q)}</div><div class="a">Searching…</div><div class="badge"></div>`);
+ const els=$('chat').querySelectorAll('.a'),a=els[els.length-1],b=a.nextElementSibling;let txt='';
+ let res;try{res=await fetch('/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({question:q})})}catch(err){a.textContent='Could not reach the server. Is uvicorn running?';return}
+ if(!res.ok){a.textContent='Server error '+res.status+'. Check the uvicorn terminal.';return}
+ const rd=res.body.getReader(),dec=new TextDecoder();let buf='';
+ while(true){const {done,value}=await rd.read();if(done)break;buf+=dec.decode(value,{stream:true});const parts=buf.split('\n\n');buf=parts.pop();
+  for(const p of parts){if(!p.startsWith('data: '))continue;const m=JSON.parse(p.slice(6));
+   if(m.type=='retrieval'){chunks=m.chunks;showChunks();a.textContent='Writing answer…'}
+   else if(m.type=='token'){txt+=m.text;renderAnswer(a,txt)}
+   else if(m.type=='error'){a.textContent=m.message+' Check LLM_API_KEY and LLM_BASE_URL.'}
+   else if(m.type=='done'){b.innerHTML=badge(m.timings)}}
+  $('chat').scrollTop=$('chat').scrollHeight}};
+const drop=$('drop');drop.ondragover=e=>{e.preventDefault();drop.classList.add('over')};drop.ondragleave=()=>drop.classList.remove('over');
+drop.ondrop=e=>{e.preventDefault();drop.classList.remove('over');up(e.dataTransfer.files)};$('file').onchange=e=>up(e.target.files);
+async function up(fs){const d=new FormData();[...fs].forEach(f=>d.append('files',f));await fetch('/ingest',{method:'POST',body:d});poll()}
+async function poll(){const s=await (await fetch('/ingest/status')).json();
+ $('stat').textContent=`${s.pdfs.length} PDFs · ${s.chunks.toLocaleString()} chunks`;
+ $('tot').textContent=s.pdfs.length?'Indexed: '+s.pdfs.join(', '):'No PDFs indexed yet.';
+ $('rows').innerHTML=Object.entries(s.files).map(([n,p])=>`<tr><td>${esc(n)}<td>${p.stage}<td>${p.pages??''}<td>${p.ocr_pages??''}<td>${p.chunks??''}</tr>`).join('')}
+setInterval(poll,2000);poll();
+</script></body></html>
