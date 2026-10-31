@@ -49,7 +49,7 @@ Requirements: Python 3.12, Tesseract, Qdrant, and a free Groq API key (or a loca
    .\.venv\Scripts\Activate.ps1
    pip install -r requirements.txt
    ```
-5. **Configuration:** copy `.env.example` to `.env` and set `LLM_API_KEY`.
+5. **Configuration:** copy `.env.example` to `.env` and set `LLM_API_KEY`. The file must be named exactly `.env`.
 
 macOS/Linux: the same steps apply with `brew install tesseract` / `apt install tesseract-ocr` and `source .venv/bin/activate`.
 
